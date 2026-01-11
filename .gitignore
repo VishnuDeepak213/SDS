@@ -1,0 +1,63 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Streamlit
+.streamlit/secrets.toml
+.streamlit/cache/
+
+# Testing & Results
+test_results/
+*.mp4
+*.avi
+*.mov
+
+# Datasets (keep example configs)
+datasets/downloads/
+datasets/custom/
+
+# Logs
+*.log
+logs/
+
+# Temp files
+*.tmp
+.cache/
+
+# Project specific
+crowd_analysis_results/
+scripts/
+results/
+temp/
