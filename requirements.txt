@@ -1,5 +1,6 @@
 # Core Dependencies
-opencv-python==4.9.0.80
+# Use headless build for Streamlit Cloud (no GUI backend required)
+opencv-python-headless==4.9.0.80
 numpy>=1.24.0
 scipy>=1.10.0
 PyYAML>=6.0
