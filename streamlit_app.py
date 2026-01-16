@@ -329,7 +329,7 @@ def show_video_analysis():
         
         max_frames = st.slider("Max Frames to Process", 50, 500, 200, step=50)
         
-        if st.button("▶️ Analyze Video", width='stretch'):
+        if st.button("▶️ Analyze Video"):
             # Save uploaded file temporarily
             with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
                 tmp_file.write(uploaded_file.getbuffer())
