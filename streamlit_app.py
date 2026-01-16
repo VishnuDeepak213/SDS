@@ -1,4 +1,4 @@
-"""
+    """
 SDS - Smart Detection & Surveillance Dashboard
 Simple interactive web interface for crowd analysis
 """
@@ -358,6 +358,13 @@ def show_video_analysis():
                 output_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='_analyzed.mp4').name
                 out = cv2.VideoWriter(output_video_path, fourcc, fps, (vid_width, vid_height))
                 
+                if not out.isOpened():
+                    st.error("❌ Failed to create video writer. Trying alternative codec...")
+                    fourcc = cv2.VideoWriter_fourcc(*'avc1')
+                    out = cv2.VideoWriter(output_video_path, fourcc, fps, (vid_width, vid_height))
+                    if not out.isOpened():
+                        raise Exception("Failed to initialize video writer with any codec")
+                
                 st.success(f"✅ Video loaded: {total_frames} frames @ {fps} FPS")
                 
                 # Create progress bar and placeholders
@@ -456,8 +463,7 @@ def show_video_analysis():
                         label="📥 Download Processed Video",
                         data=video_bytes,
                         file_name="crowd_analysis_result.mp4",
-                        mime="video/mp4",
-                        width='stretch'
+                        mime="video/mp4"
                     )
                 
                 # Statistics
@@ -491,7 +497,7 @@ def show_video_analysis():
                     template='plotly_dark',
                     height=400
                 )
-                st.plotly_chart(fig_det, width='stretch')
+                st.plotly_chart(fig_det, use_container_width=True)
                 
                 if density_over_time:
                     st.markdown("### 📊 Crowd Density Over Time")
@@ -511,12 +517,7 @@ def show_video_analysis():
                         template='plotly_dark',
                         height=400
                     )
-                    st.plotly_chart(fig_dens, width='stretch')
-                
-                # Summary metrics
-                st.markdown("### 📋 Summary")
-                summary_col1, summary_col2, summary_col3 = st.columns(3)
-                
+                    st.plotly_chart(fig_dens, use_container_width=True)
                 with summary_col1:
                     if density_over_time:
                         avg_density = np.mean(density_over_time)
@@ -540,6 +541,7 @@ def show_video_analysis():
                 
             except Exception as e:
                 st.error(f"❌ Error processing video: {str(e)}")
+                st.exception(e)  # Show full traceback for debugging
             finally:
                 # Ensure video resources are released
                 if cap is not None:
