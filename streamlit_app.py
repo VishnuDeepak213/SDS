@@ -447,11 +447,8 @@ def show_video_analysis():
                     with open(output_video_path, 'rb') as f:
                         video_bytes = f.read()
                     
-                    # Display processed video
-                    st.markdown("### 📹 Processed Video")
-                    st.video(video_bytes)
-                    
-                    # Download button
+                    # Download processed video
+                    st.markdown("### 📥 Download Processed Video")
                     st.download_button(
                         label="📥 Download Processed Video",
                         data=video_bytes,
