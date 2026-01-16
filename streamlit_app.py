@@ -262,7 +262,7 @@ def show_image_analysis():
         with col3:
             show_tracking = st.checkbox("🎯 Tracking", value=False)
         
-        if st.button("🔍 Analyze Image", use_container_width=True):
+        if st.button("🔍 Analyze Image", width='stretch'):
             with st.spinner("⏳ Processing image..."):
                 try:
                     features = {
@@ -329,8 +329,236 @@ def show_video_analysis():
         
         max_frames = st.slider("Max Frames to Process", 50, 500, 200, step=50)
         
-        if st.button("▶️ Analyze Video", use_container_width=True):
-            st.info("📹 Video analysis coming soon! This feature will process and display results frame-by-frame.")
+        if st.button("▶️ Analyze Video", width='stretch'):
+            # Save uploaded file temporarily
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
+                tmp_file.write(uploaded_file.getbuffer())
+                tmp_video_path = tmp_file.name
+            
+            output_video_path = None
+            cap = None
+            out = None
+            
+            try:
+                # Initialize modules
+                detector, tracker, threat_detector = initialize_modules(config)
+                density_estimator = None
+                flow_analyzer = None
+                visualizer = Visualizer(config['visualization'])
+                
+                # Open video
+                cap = cv2.VideoCapture(tmp_video_path)
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                vid_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                vid_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                
+                # Setup video writer for output
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                output_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='_analyzed.mp4').name
+                out = cv2.VideoWriter(output_video_path, fourcc, fps, (vid_width, vid_height))
+                
+                st.success(f"✅ Video loaded: {total_frames} frames @ {fps} FPS")
+                
+                # Create progress bar and placeholders
+                progress_bar = st.progress(0)
+                frame_count = 0
+                processed_frames = 0
+                total_detections = []
+                density_over_time = []
+                
+                # Process video frames
+                with st.spinner("🔄 Processing video..."):
+                    while cap.isOpened() and processed_frames < max_frames:
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                        
+                        frame_count += 1
+                        output_frame = frame.copy()
+                        
+                        # Detection
+                        detections = detector(frame)
+                        total_detections.append(len(detections))
+                        
+                        # Draw detections
+                        if show_detection:
+                            for det in detections:
+                                x1, y1, x2, y2 = map(int, det[:4])
+                                conf = det[4]
+                                cv2.rectangle(output_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(output_frame, f'{conf:.2f}', (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                            
+                            # Tracking
+                            tracks = tracker.update(frame, detections)
+                            for track in tracks:
+                                if track.is_confirmed():
+                                    x1, y1, x2, y2 = map(int, track.to_tlbr())
+                                    cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                                    cv2.putText(output_frame, f'ID:{track.track_id}', (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                        
+                        # Density estimation
+                        if show_density:
+                            if density_estimator is None:
+                                density_estimator = DensityEstimator(config['density'], (vid_width, vid_height))
+                            density_grid, density_heatmap, _ = density_estimator.estimate(detections)
+                            density_count = density_grid.sum()
+                            density_over_time.append(density_count)
+                            
+                            # Add density text
+                            thresholds = config['density']['thresholds']
+                            if density_count >= thresholds['critical']:
+                                level = "CRITICAL"
+                                color = (0, 0, 255)
+                            elif density_count >= thresholds['high']:
+                                level = "HIGH"
+                                color = (0, 165, 255)
+                            elif density_count >= thresholds['medium']:
+                                level = "MEDIUM"
+                                color = (0, 255, 255)
+                            else:
+                                level = "LOW"
+                                color = (0, 255, 0)
+                            
+                            cv2.putText(output_frame, f'Density: {level} ({density_count:.0f})', 
+                                      (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                        
+                        # Write frame to output video
+                        out.write(output_frame)
+                        
+                        processed_frames += 1
+                        progress = processed_frames / max_frames
+                        progress_bar.progress(progress)
+                    
+                    # Properly release video resources BEFORE trying to read/delete
+                    if cap is not None:
+                        cap.release()
+                        cap = None
+                    if out is not None:
+                        out.release()
+                        out = None
+                
+                # Display results
+                st.markdown("---")
+                st.success(f"✅ Processing complete! Analyzed {processed_frames} frames")
+                
+                # Read processed video for display and download
+                if os.path.exists(output_video_path):
+                    with open(output_video_path, 'rb') as f:
+                        video_bytes = f.read()
+                    
+                    # Display processed video
+                    st.markdown("### 🎬 Processed Video")
+                    st.video(video_bytes)
+                    
+                    # Download button
+                    st.download_button(
+                        label="📥 Download Processed Video",
+                        data=video_bytes,
+                        file_name="crowd_analysis_result.mp4",
+                        mime="video/mp4",
+                        width='stretch'
+                    )
+                
+                # Statistics
+                st.markdown("### 📊 Video Analysis Results")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("📹 Total Frames", processed_frames)
+                with col2:
+                    st.metric("👤 Avg Persons/Frame", f"{np.mean(total_detections):.1f}")
+                with col3:
+                    st.metric("👥 Max Persons", int(np.max(total_detections)))
+                with col4:
+                    st.metric("⏱️ Duration", f"{processed_frames/fps:.1f}s")
+                
+                # Create charts
+                st.markdown("### 📈 Detection Over Time")
+                fig_det = go.Figure()
+                fig_det.add_trace(go.Scatter(
+                    y=total_detections,
+                    mode='lines+markers',
+                    name='Persons Detected',
+                    line=dict(color='#667eea', width=2),
+                    marker=dict(size=4)
+                ))
+                fig_det.update_layout(
+                    title="Persons Detected Per Frame",
+                    xaxis_title="Frame Number",
+                    yaxis_title="Number of Persons",
+                    hovermode='x unified',
+                    template='plotly_dark',
+                    height=400
+                )
+                st.plotly_chart(fig_det, width='stretch')
+                
+                if density_over_time:
+                    st.markdown("### 📊 Crowd Density Over Time")
+                    fig_dens = go.Figure()
+                    fig_dens.add_trace(go.Scatter(
+                        y=density_over_time,
+                        mode='lines',
+                        name='Total Density',
+                        line=dict(color='#FF6B6B', width=2),
+                        fill='tozeroy'
+                    ))
+                    fig_dens.update_layout(
+                        title="Crowd Density Over Time",
+                        xaxis_title="Frame Number",
+                        yaxis_title="Density Count",
+                        hovermode='x unified',
+                        template='plotly_dark',
+                        height=400
+                    )
+                    st.plotly_chart(fig_dens, width='stretch')
+                
+                # Summary metrics
+                st.markdown("### 📋 Summary")
+                summary_col1, summary_col2, summary_col3 = st.columns(3)
+                
+                with summary_col1:
+                    if density_over_time:
+                        avg_density = np.mean(density_over_time)
+                        st.metric("📊 Average Density", f"{avg_density:.1f}")
+                
+                with summary_col2:
+                    max_density = max(density_over_time) if density_over_time else 0
+                    thresholds = config['density']['thresholds']
+                    if max_density >= thresholds['critical']:
+                        level = "🔴 CRITICAL"
+                    elif max_density >= thresholds['high']:
+                        level = "🟠 HIGH"
+                    elif max_density >= thresholds['medium']:
+                        level = "🟡 MEDIUM"
+                    else:
+                        level = "🟢 LOW"
+                    st.metric("Peak Density Level", level)
+                
+                with summary_col3:
+                    st.metric("Processing Status", "✅ Complete")
+                
+            except Exception as e:
+                st.error(f"❌ Error processing video: {str(e)}")
+            finally:
+                # Ensure video resources are released
+                if cap is not None:
+                    try:
+                        cap.release()
+                    except:
+                        pass
+                if out is not None:
+                    try:
+                        out.release()
+                    except:
+                        pass
+                
+                # Clean up temp input file
+                if os.path.exists(tmp_video_path):
+                    try:
+                        os.unlink(tmp_video_path)
+                    except Exception as e:
+                        st.warning(f"Could not delete temp file: {e}")
     else:
         st.info("📤 Upload a video to begin analysis")
 
