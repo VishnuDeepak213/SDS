@@ -262,7 +262,7 @@ def show_image_analysis():
         with col3:
             show_tracking = st.checkbox("🎯 Tracking", value=False)
         
-        if st.button("🔍 Analyze Image", width='stretch'):
+        if st.button("🔍 Analyze Image", use_container_width=True):
             with st.spinner("⏳ Processing image..."):
                 try:
                     features = {
@@ -406,15 +406,19 @@ def show_video_analysis():
                             density_over_time.append(density_count)
                             
                             # Add density text
-                            if density_count >= config['density']['thresholds'][2]:
+                            thresholds = config['density']['thresholds']
+                            if density_count >= thresholds['critical']:
                                 level = "CRITICAL"
                                 color = (0, 0, 255)
-                            elif density_count >= config['density']['thresholds'][1]:
+                            elif density_count >= thresholds['high']:
                                 level = "HIGH"
                                 color = (0, 165, 255)
-                            else:
+                            elif density_count >= thresholds['medium']:
                                 level = "MEDIUM"
                                 color = (0, 255, 255)
+                            else:
+                                level = "LOW"
+                                color = (0, 255, 0)
                             
                             cv2.putText(output_frame, f'Density: {level} ({density_count:.0f})', 
                                       (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
@@ -444,7 +448,7 @@ def show_video_analysis():
                         video_bytes = f.read()
                     
                     # Display processed video
-                    st.markdown("### 🎬 Processed Video")
+                    st.markdown("### 📹 Processed Video")
                     st.video(video_bytes)
                     
                     # Download button
@@ -452,8 +456,7 @@ def show_video_analysis():
                         label="📥 Download Processed Video",
                         data=video_bytes,
                         file_name="crowd_analysis_result.mp4",
-                        mime="video/mp4",
-                        width='stretch'
+                        mime="video/mp4"
                     )
                 
                 # Statistics
@@ -469,25 +472,26 @@ def show_video_analysis():
                 with col4:
                     st.metric("⏱️ Duration", f"{processed_frames/fps:.1f}s")
                 
-                # Create charts
-                st.markdown("### 📈 Detection Over Time")
-                fig_det = go.Figure()
-                fig_det.add_trace(go.Scatter(
-                    y=total_detections,
-                    mode='lines+markers',
-                    name='Persons Detected',
-                    line=dict(color='#667eea', width=2),
-                    marker=dict(size=4)
-                ))
-                fig_det.update_layout(
-                    title="Persons Detected Per Frame",
-                    xaxis_title="Frame Number",
-                    yaxis_title="Number of Persons",
-                    hovermode='x unified',
-                    template='plotly_dark',
-                    height=400
-                )
-                st.plotly_chart(fig_det, width='stretch')
+                # Charts
+                if total_detections:
+                    st.markdown("### 📈 Detection Over Time")
+                    fig_det = go.Figure()
+                    fig_det.add_trace(go.Scatter(
+                        y=total_detections,
+                        mode='lines+markers',
+                        name='Persons Detected',
+                        line=dict(color='#4ECDC4', width=2),
+                        marker=dict(size=4)
+                    ))
+                    fig_det.update_layout(
+                        title="Persons Detected per Frame",
+                        xaxis_title="Frame Number",
+                        yaxis_title="Number of Detections",
+                        hovermode='x unified',
+                        template='plotly_dark',
+                        height=400
+                    )
+                    st.plotly_chart(fig_det, use_container_width=True)
                 
                 if density_over_time:
                     st.markdown("### 📊 Crowd Density Over Time")
@@ -507,7 +511,7 @@ def show_video_analysis():
                         template='plotly_dark',
                         height=400
                     )
-                    st.plotly_chart(fig_dens, width='stretch')
+                    st.plotly_chart(fig_dens, use_container_width=True)
                 
                 # Summary metrics
                 st.markdown("### 📋 Summary")
@@ -553,8 +557,15 @@ def show_video_analysis():
                 if os.path.exists(tmp_video_path):
                     try:
                         os.unlink(tmp_video_path)
-                    except Exception as e:
-                        st.warning(f"Could not delete temp file: {e}")
+                    except:
+                        pass
+                
+                # Clean up temp output file
+                if output_video_path and os.path.exists(output_video_path):
+                    try:
+                        os.unlink(output_video_path)
+                    except:
+                        pass
     else:
         st.info("📤 Upload a video to begin analysis")
 
