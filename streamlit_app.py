@@ -262,7 +262,7 @@ def show_image_analysis():
         with col3:
             show_tracking = st.checkbox("🎯 Tracking", value=False)
         
-        if st.button("🔍 Analyze Image"):
+        if st.button("🔍 Analyze Image", width='stretch'):
             with st.spinner("⏳ Processing image..."):
                 try:
                     features = {
@@ -329,7 +329,7 @@ def show_video_analysis():
         
         max_frames = st.slider("Max Frames to Process", 50, 500, 200, step=50)
         
-        if st.button("▶️ Analyze Video"):
+        if st.button("▶️ Analyze Video", width='stretch'):
             # Save uploaded file temporarily
             with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
                 tmp_file.write(uploaded_file.getbuffer())
@@ -406,19 +406,15 @@ def show_video_analysis():
                             density_over_time.append(density_count)
                             
                             # Add density text
-                            thresholds = config['density']['thresholds']
-                            if density_count >= thresholds['critical']:
+                            if density_count >= config['density']['thresholds'][2]:
                                 level = "CRITICAL"
                                 color = (0, 0, 255)
-                            elif density_count >= thresholds['high']:
+                            elif density_count >= config['density']['thresholds'][1]:
                                 level = "HIGH"
                                 color = (0, 165, 255)
-                            elif density_count >= thresholds['medium']:
+                            else:
                                 level = "MEDIUM"
                                 color = (0, 255, 255)
-                            else:
-                                level = "LOW"
-                                color = (0, 255, 0)
                             
                             cv2.putText(output_frame, f'Density: {level} ({density_count:.0f})', 
                                       (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
@@ -456,7 +452,8 @@ def show_video_analysis():
                         label="📥 Download Processed Video",
                         data=video_bytes,
                         file_name="crowd_analysis_result.mp4",
-                        mime="video/mp4"
+                        mime="video/mp4",
+                        width='stretch'
                     )
                 
                 # Statistics
@@ -490,7 +487,7 @@ def show_video_analysis():
                     template='plotly_dark',
                     height=400
                 )
-                st.plotly_chart(fig_det, use_container_width=True)
+                st.plotly_chart(fig_det, width='stretch')
                 
                 if density_over_time:
                     st.markdown("### 📊 Crowd Density Over Time")
@@ -510,7 +507,12 @@ def show_video_analysis():
                         template='plotly_dark',
                         height=400
                     )
-                    st.plotly_chart(fig_dens, use_container_width=True)
+                    st.plotly_chart(fig_dens, width='stretch')
+                
+                # Summary metrics
+                st.markdown("### 📋 Summary")
+                summary_col1, summary_col2, summary_col3 = st.columns(3)
+                
                 with summary_col1:
                     if density_over_time:
                         avg_density = np.mean(density_over_time)
