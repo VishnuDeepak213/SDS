@@ -88,10 +88,15 @@ def load_config():
 # Initialize modules
 @st.cache_resource
 def initialize_modules(config):
-    detector = PersonDetector(config['detection'])
-    tracker = PersonTracker(config['tracking'])
-    threat_detector = ThreatDetector(config['threats'])
-    return detector, tracker, threat_detector
+    try:
+        detector = PersonDetector(config['detection'])
+        tracker = PersonTracker(config['tracking'])
+        threat_detector = ThreatDetector(config['threats'])
+        return detector, tracker, threat_detector
+    except Exception as e:
+        st.error(f"❌ Failed to initialize modules: {str(e)}")
+        st.info("💡 This may be a timeout loading the YOLOv8 model. Please refresh the page.")
+        raise
 
 def process_image(uploaded_file, features, config):
     """Process uploaded image with selected features"""
@@ -442,12 +447,11 @@ def show_video_analysis():
                 st.markdown("---")
                 st.success(f"✅ Processing complete! Analyzed {processed_frames} frames")
                 
-                # Read processed video for display and download
+                # Download processed video
                 if os.path.exists(output_video_path):
                     with open(output_video_path, 'rb') as f:
                         video_bytes = f.read()
                     
-                    # Download processed video
                     st.markdown("### 📥 Download Processed Video")
                     st.download_button(
                         label="📥 Download Processed Video",
@@ -565,6 +569,3 @@ def show_video_analysis():
                         pass
     else:
         st.info("📤 Upload a video to begin analysis")
-
-if __name__ == "__main__":
-    main()
