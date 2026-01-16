@@ -1,4 +1,5 @@
 # Core Dependencies
+# CRITICAL: opencv-python-headless MUST come before any package that depends on opencv
 # Use headless build for Streamlit Cloud (no GUI backend required)
 opencv-python-headless==4.9.0.80
 numpy>=1.24.0
@@ -21,7 +22,7 @@ plotly>=5.18.0
 
 # Utils
 scikit-learn>=1.3.0
-scikit-image>=0.22.0
+# Removed: scikit-image (pulls in opencv-python, conflicts with headless)
 pandas>=2.1.0
 tqdm>=4.66.0
 requests>=2.31.0
