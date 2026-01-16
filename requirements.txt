@@ -47,3 +47,4 @@ black==23.12.1
 
 # CRITICAL: Force opencv-python-headless installation LAST to override any opencv-python
 opencv-python-headless==4.9.0.80
+opencv-python-headless==4.9.0.80
