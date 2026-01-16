@@ -1,7 +1,6 @@
-# Core Dependencies
-# CRITICAL: opencv-python-headless MUST come before any package that depends on opencv
-# Use headless build for Streamlit Cloud (no GUI backend required)
+# Core Dependencies - Install opencv-python-headless FIRST
 opencv-python-headless==4.9.0.80
+
 numpy>=1.24.0
 scipy>=1.10.0
 PyYAML>=6.0
@@ -43,3 +42,7 @@ tqdm==4.66.1
 # Development
 pytest==7.4.3
 black==23.12.1
+
+# CRITICAL FIX: Force opencv-python-headless to override any opencv-python installed by dependencies
+# This must be at the END to ensure it takes precedence
+opencv-python-headless==4.9.0.80
