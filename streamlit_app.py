@@ -2,24 +2,31 @@
 SDS - Smart Detection & Surveillance Dashboard
 Simple interactive web interface for crowd analysis
 """
+import sys
+from pathlib import Path
+
+# FIX 1: Add src to Python path for Streamlit Cloud
+ROOT_DIR = Path(__file__).resolve().parent
+SRC_DIR = ROOT_DIR / "src"
+sys.path.append(str(SRC_DIR))
+
 import streamlit as st
 import cv2
 import yaml
 import numpy as np
 import tempfile
 import os
-from pathlib import Path
 from PIL import Image
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 
-from src.detection.detector import PersonDetector
-from src.tracking.tracker import PersonTracker
-from src.density.estimator import DensityEstimator
-from src.flow.analyzer import FlowAnalyzer
-from src.threats.detector import ThreatDetector
-from src.visualization.renderer import Visualizer
+from detection.detector import PersonDetector
+from tracking.tracker import PersonTracker
+from density.estimator import DensityEstimator
+from flow.analyzer import FlowAnalyzer
+from threats.detector import ThreatDetector
+from visualization.renderer import Visualizer
 
 # Page configuration
 st.set_page_config(
