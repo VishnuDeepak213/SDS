@@ -380,7 +380,6 @@ def show_video_analysis():
                 processed_frames = 0
                 total_detections = []
                 density_over_time = []
-                output_frames = []
                 
                 # Process video frames
                 with st.spinner("🔄 Processing frames..."):
@@ -434,8 +433,6 @@ def show_video_analysis():
                             
                             cv2.putText(output_frame, f'Density: {level} ({density_count:.0f})', 
                                       (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-                        
-                        output_frames.append(output_frame)
                         
                         processed_frames += 1
                         progress = processed_frames / max_frames
