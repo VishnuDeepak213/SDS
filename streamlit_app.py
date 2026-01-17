@@ -1,6 +1,6 @@
 """
 SDS - Smart Detection & Surveillance Dashboard
-Video Analysis with Metrics & Graphs
+Simple interactive web interface for crowd analysis
 """
 import streamlit as st
 import cv2
@@ -10,24 +10,32 @@ import tempfile
 import os
 import sys
 from pathlib import Path
+from PIL import Image
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 
 # Ensure src/ is on Python path BEFORE importing from src
 ROOT_DIR = Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-# Now import from src modules
-from src.detection.detector import PersonDetector
-from src.tracking.tracker import PersonTracker
-from src.density.estimator import DensityEstimator
-from src.threats.detector import ThreatDetector
+# Now import from src modules with error handling
+try:
+    from src.detection.detector import PersonDetector
+    from src.tracking.tracker import PersonTracker
+    from src.density.estimator import DensityEstimator
+    from src.threats.detector import ThreatDetector
+    from src.visualization.renderer import Visualizer
+except Exception as e:
+    st.error(f"❌ Import error: {e}")
+    st.error(f"Make sure all required files are in the src/ folder")
+    st.stop()
 
 # Page configuration
 st.set_page_config(
-    page_title="SDS - Video Analysis",
-    page_icon="🎥",
+    page_title="SDS - Crowd Analysis Dashboard",
+    page_icon="👥",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -45,12 +53,47 @@ st.markdown("""
         margin-bottom: 2rem;
         box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     }
+    .feature-box-image {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+    .feature-box-video {
+        background: linear-gradient(135deg, #FF6B6B 0%, #FFE66D 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+    }
+    .feature-box {
+        background-color: #f0f2f6;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        border-left: 4px solid #667eea;
+    }
+    .stat-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        text-align: center;
+    }
+    .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # Load configuration
 @st.cache_resource
 def load_config():
+    # FIX 2: Use absolute path for config.yaml
     config_path = Path(__file__).parent / "config" / "config.yaml"
     if not config_path.exists():
         st.error(f"❌ Missing config file: {config_path}")
@@ -66,16 +109,223 @@ def initialize_modules(config):
     threat_detector = ThreatDetector(config['threats'])
     return detector, tracker, threat_detector
 
-def main():
-    """Main video analysis application"""
+def process_image(uploaded_file, features, config):
+    """Process uploaded image with selected features"""
+    # Read image
+    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+    frame = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    h, w = frame.shape[:2]
     
+    # Initialize modules
+    detector, tracker, threat_detector = initialize_modules(config)
+    density_estimator = DensityEstimator(config['density'], (w, h))
+    visualizer = Visualizer(config['visualization'])
+    
+    # Detection
+    detections = detector.detect(frame)
+    results = {
+        'frame': frame,
+        'detections': detections,
+        'num_persons': len(detections),
+        'tracks': [],
+        'density': None
+    }
+    
+    # Tracking
+    if features['tracking']:
+        tracks = tracker.update(frame, detections)
+        results['tracks'] = [t for t in tracks if t.is_confirmed()]
+    
+    # Density estimation
+    if features['density']:
+        density_grid, density_heatmap, density_alerts = density_estimator.estimate(detections)
+        total_count = density_grid.sum()
+        
+        # Determine level
+        if total_count >= config['density']['thresholds']['critical']:
+            level = 'CRITICAL'
+        elif total_count >= config['density']['thresholds']['high']:
+            level = 'HIGH'
+        elif total_count >= config['density']['thresholds']['medium']:
+            level = 'MEDIUM'
+        else:
+            level = 'LOW'
+        
+        results['density'] = {
+            'grid': density_grid,
+            'heatmap': density_heatmap,
+            'level': level,
+            'count': int(total_count),
+            'alerts': density_alerts
+        }
+    
+    # Draw detections on frame
+    vis_frame = frame.copy()
+    for det in detections:
+        x1, y1, x2, y2 = map(int, det[:4])
+        conf = det[4]
+        cv2.rectangle(vis_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(vis_frame, f'{conf:.2f}', (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    
+    results['visualized'] = cv2.cvtColor(vis_frame, cv2.COLOR_BGR2RGB)
+    results['original'] = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    
+    return results
+
+def main():
+    """Main dashboard application"""
+    
+    # Sidebar navigation (vertical rectangular buttons)
+    st.sidebar.markdown("# 🎬 SDS Dashboard")
+    if st.sidebar.button("🏠 Home", use_container_width=True, key="nav_home"):
+        st.session_state.page = "🏠 Home"
+    if st.sidebar.button("🖼️ Image Analysis", use_container_width=True, key="nav_image"):
+        st.session_state.page = "🖼️ Image Analysis"
+    if st.sidebar.button("🎥 Video Analysis", use_container_width=True, key="nav_video"):
+        st.session_state.page = "🎥 Video Analysis"
+
+    page = st.session_state.get("page", "🏠 Home")
+    
+    if page == "🏠 Home":
+        show_home_page()
+    elif page == "🖼️ Image Analysis":
+        show_image_analysis()
+    elif page == "🎥 Video Analysis":
+        show_video_analysis()
+
+def show_home_page():
+    """Display home page with menu"""
     st.markdown("""
     <div class='main-header'>
-        🎥 SDS - Video Analysis Dashboard
+        👥 SDS - Smart Detection & Surveillance
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown("Upload a video to analyze crowd dynamics with metrics and visualizations")
+    st.markdown("""
+    Welcome to the **SDS Crowd Analysis Dashboard**. 
+    
+    This system provides real-time analysis of crowds and individuals in images and videos.
+    """)
+    
+    st.markdown("---")
+    
+    # Feature cards
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        <div class='feature-box-image'>
+            <h2>🖼️ IMAGE ANALYSIS</h2>
+            <p>Upload a single image and get instant analysis:</p>
+            <ul>
+                <li>👤 Person Detection</li>
+                <li>🎯 Individual Tracking</li>
+                <li>📊 Crowd Density Estimation</li>
+                <li>⚠️ Threat Detection</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown("""
+        <div class='feature-box-video'>
+            <h2>🎥 VIDEO ANALYSIS</h2>
+            <p>Upload a video for comprehensive analysis:</p>
+            <ul>
+                <li>🎬 Real-time Detection</li>
+                <li>📈 Crowd Density Over Time</li>
+                <li>🔄 Optical Flow Analysis</li>
+                <li>🚨 Anomaly Detection</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    st.markdown("""
+    ### 📋 Key Features
+    
+    - **YOLOv8 Detection**: Fast and accurate person detection
+    - **DeepSORT Tracking**: Multi-object tracking across frames
+    - **Crowd Density**: Grid-based density estimation
+    - **Optical Flow**: Movement analysis
+    - **Threat Detection**: Anomaly and panic detection
+    
+    ### 🚀 Getting Started
+    1. Select **Image Analysis** or **Video Analysis** from the sidebar
+    2. Upload your file
+    3. Choose analysis features
+    4. View results with visualizations
+    """)
+
+def show_image_analysis():
+    """Image analysis page"""
+    st.markdown("# 🖼️ Image Analysis")
+    st.markdown("Upload an image to detect and analyze crowds")
+    
+    config = load_config()
+    
+    # File uploader
+    uploaded_file = st.file_uploader(
+        "Select Image",
+        type=['jpg', 'jpeg', 'png', 'bmp'],
+        help="Choose an image file to analyze"
+    )
+    
+    if uploaded_file:
+        st.markdown("### ⚙️ Analysis Features")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            show_detection = st.checkbox("👤 Person Detection", value=True)
+        with col2:
+            show_density = st.checkbox("📊 Crowd Density", value=True)
+        with col3:
+            show_tracking = st.checkbox("🎯 Tracking", value=False)
+        
+        if st.button("🔍 Analyze Image", use_container_width=True):
+            with st.spinner("⏳ Processing image..."):
+                try:
+                    features = {
+                        'detection': show_detection,
+                        'tracking': show_tracking,
+                        'density': show_density,
+                        'flow': False,
+                        'threats': False
+                    }
+                    
+                    results = process_image(uploaded_file, features, config)
+                    
+                    # Display results
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.image(results['original'], caption="Original Image", width=None)
+                    with col2:
+                        st.image(results['visualized'], caption="Detection Result", width=None)
+                    
+                    # Statistics
+                    st.markdown("---")
+                    st.markdown("### 📊 Analysis Results")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("👤 Persons Detected", results['num_persons'])
+                    
+                    if results['density']:
+                        with col2:
+                            st.metric("📊 Density Level", results['density']['level'])
+                        with col3:
+                            st.metric("Count", results['density']['count'])
+                    
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
+    else:
+        st.info("📤 Upload an image to begin analysis")
+
+def show_video_analysis():
+    """Video analysis page"""
+    st.markdown("# 🎥 Video Analysis")
+    st.markdown("Upload a video to analyze crowd dynamics over time")
     
     config = load_config()
     
@@ -91,11 +341,15 @@ def main():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            show_detection = st.checkbox("👤 Person Detection", value=True, key="v_det")
+            show_detection = st.checkbox("👤 Detection", value=True, key="v_det")
         with col2:
-            show_density = st.checkbox("📊 Crowd Density", value=True, key="v_dens")
+            show_density = st.checkbox("📊 Density", value=True, key="v_dens")
         with col3:
-            show_tracking = st.checkbox("🎯 Tracking", value=True, key="v_track")
+            show_flow = st.checkbox("🔄 Flow", value=False, key="v_flow")
+        
+        # NEW: Person selection feature
+        track_specific_person = st.checkbox("🎯 Track Specific Person", value=False, key="v_track_person")
+        selected_person_id = None
         
         max_frames = st.slider("Max Frames to Process", 50, 500, 200, step=50)
         
@@ -110,7 +364,7 @@ def main():
             output_video_path = None
             
             try:
-                # Load video
+                # Load video with FPS/size fallbacks
                 cap = cv2.VideoCapture(tmp_video_path)
                 if not cap.isOpened():
                     raise RuntimeError("Failed to open video file.")
@@ -132,28 +386,83 @@ def main():
 
                 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
                 st.success("✅ Video loaded successfully!")
-                st.info(f"📹 Resolution: {vid_width}x{vid_height} | FPS: {fps:.1f} | Total Frames: {total_frames}")
+                st.info(f"📹 Resolution: {vid_width}x{vid_height} | FPS: {fps} | Total Frames: {total_frames}")
 
                 # Initialize modules
                 detector, tracker, threat_detector = initialize_modules(config)
                 density_estimator = DensityEstimator(config['density'], (vid_width, vid_height))
+                
+                # NEW: Handle person selection from first frame
+                selected_person_id = None
+                if track_specific_person:
+                    st.markdown("### 🎯 Select Person to Track")
+                    st.info("Detected persons in the first frame:")
+                    
+                    # Detect persons in first frame using detector.detect() method
+                    first_frame_detections = detector.detect(first_frame)
+                    st.info(f"✅ Detected {len(first_frame_detections)} persons in first frame")
+                    
+                    if len(first_frame_detections) > 0:
+                        # Display first frame with detection boxes and IDs
+                        first_frame_display = first_frame.copy()
+                        person_boxes = []
+                        
+                        # Get tracks from first frame - run tracker multiple times to initialize
+                        tracker_temp = PersonTracker(config['tracking'])
+                        for _ in range(3):  # Run 3 times to confirm tracks
+                            tracks = tracker_temp.update(first_frame, first_frame_detections)
+                        
+                        # Show detections even if tracking not confirmed yet
+                        if len(tracks) == 0 or not any(t.is_confirmed() for t in tracks):
+                            # Fallback: show raw detections with numbered boxes
+                            for idx, det in enumerate(first_frame_detections):
+                                x1, y1, x2, y2 = map(int, det[:4])
+                                person_id = idx + 1
+                                person_boxes.append((person_id, (x1, y1, x2, y2)))
+                                cv2.rectangle(first_frame_display, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(first_frame_display, f'Person {person_id}', (x1, y1-10), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        else:
+                            # Use confirmed tracks
+                            for track in tracks:
+                                if track.is_confirmed():
+                                    x1, y1, x2, y2 = map(int, track.to_tlbr())
+                                    person_boxes.append((track.track_id, (x1, y1, x2, y2)))
+                                    cv2.rectangle(first_frame_display, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                    cv2.putText(first_frame_display, f'ID:{track.track_id}', (x1, y1-10), 
+                                              cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        
+                        # Display frame with boxes
+                        col_frame, col_select = st.columns([2, 1])
+                        with col_frame:
+                            st.image(cv2.cvtColor(first_frame_display, cv2.COLOR_BGR2RGB), 
+                                    caption="First Frame with Detected Persons", width=None)
+                        
+                        # Selection interface
+                        with col_select:
+                            if person_boxes:
+                                person_ids = [str(box[0]) for box in person_boxes]
+                                selected_id_str = st.selectbox("Select Person ID:", person_ids, key="person_select")
+                                selected_person_id = int(selected_id_str)
+                                st.success(f"✅ Person ID {selected_person_id} selected for tracking")
+                            else:
+                                st.warning("⚠️ No persons confirmed for tracking")
+                    else:
+                        st.warning("⚠️ No persons detected in first frame")
+                        st.info("💡 Tip: Make sure the first frame contains visible people")
+                    
+                    # Reset tracker for actual processing
+                    tracker = PersonTracker(config['tracking'])
+                    
+                    # Reset video to beginning after reading first frame
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-                # Prepare writer with H264 codec
-                fourcc = cv2.VideoWriter_fourcc(*'avc1')
-                output_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='_processed.mp4').name
-                out = cv2.VideoWriter(output_video_path, fourcc, fps, (vid_width, vid_height))
-                if not out.isOpened():
-                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                    out = cv2.VideoWriter(output_video_path, fourcc, fps, (vid_width, vid_height))
-                    if not out.isOpened():
-                        raise RuntimeError("Failed to initialize video writer.")
-
-                # Progress tracking
+                # Progress tracking and frame display
                 progress_bar = st.progress(0)
+                frame_placeholder = st.empty()
                 processed_frames = 0
                 total_detections = []
                 density_over_time = []
-                frame_numbers = []
 
                 with st.spinner("🔄 Processing frames..."):
                     while cap.isOpened() and processed_frames < max_frames:
@@ -162,9 +471,9 @@ def main():
                             break
 
                         output_frame = frame.copy()
+
                         detections = detector.detect(frame)
                         total_detections.append(len(detections))
-                        frame_numbers.append(processed_frames)
 
                         if show_detection and len(detections) > 0:
                             for det in detections:
@@ -172,17 +481,31 @@ def main():
                                 conf = det[4]
                                 cv2.rectangle(output_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                                 cv2.putText(output_frame, f'{conf:.2f}', (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                            
-                            if show_tracking:
-                                try:
-                                    tracks = tracker.update(frame, detections)
-                                    for track in tracks:
-                                        if track.is_confirmed():
-                                            x1, y1, x2, y2 = map(int, track.to_tlbr())
-                                            cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
-                                            cv2.putText(output_frame, f'ID:{track.track_id}', (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-                                except Exception:
-                                    pass
+                            try:
+                                tracks = tracker.update(frame, detections)
+                                for track in tracks:
+                                    if track.is_confirmed():
+                                        x1, y1, x2, y2 = map(int, track.to_tlbr())
+                                        
+                                        # NEW: Highlight selected person with different color
+                                        if selected_person_id is not None and track.track_id == selected_person_id:
+                                            # Bright red (0, 0, 255) for selected person
+                                            color = (0, 0, 255)
+                                            thickness = 3  # Thicker box for selected person
+                                            cv2.rectangle(output_frame, (x1, y1), (x2, y2), color, thickness)
+                                            cv2.putText(output_frame, f'TRACKED ID:{track.track_id}', (x1, y1-15), 
+                                                      cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                                            # Draw a filled circle at the center to highlight
+                                            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                                            cv2.circle(output_frame, (cx, cy), 5, color, -1)
+                                        else:
+                                            # Blue (255, 0, 0) for other persons
+                                            color = (255, 0, 0)
+                                            cv2.rectangle(output_frame, (x1, y1), (x2, y2), color, 2)
+                                            cv2.putText(output_frame, f'ID:{track.track_id}', (x1, y1-10), 
+                                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                            except Exception:
+                                pass
 
                         if show_density and len(detections) > 0:
                             try:
@@ -190,120 +513,26 @@ def main():
                                 density_count = density_grid.sum()
                                 density_over_time.append(density_count)
                                 thresholds = config['density']['thresholds']
-                                
                                 if density_count >= thresholds['critical']:
-                                    level = "CRITICAL"
-                                    color = (0, 0, 255)
+                                    level = "CRITICAL"; color = (0, 0, 255)
                                 elif density_count >= thresholds['high']:
-                                    level = "HIGH"
-                                    color = (0, 165, 255)
+                                    level = "HIGH"; color = (0, 165, 255)
                                 elif density_count >= thresholds['medium']:
-                                    level = "MEDIUM"
-                                    color = (0, 255, 255)
+                                    level = "MEDIUM"; color = (0, 255, 255)
                                 else:
-                                    level = "LOW"
-                                    color = (0, 255, 0)
-                                
+                                    level = "LOW"; color = (0, 255, 0)
                                 cv2.putText(output_frame, f'Density: {level} ({density_count:.0f})', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
                             except Exception:
                                 density_over_time.append(len(detections))
 
-                        out.write(output_frame)
+                        # Display frame in real-time
+                        frame_placeholder.image(output_frame, channels="BGR", use_column_width=True)
                         processed_frames += 1
                         if processed_frames % 10 == 0 or processed_frames >= max_frames:
                             progress_bar.progress(min(processed_frames / max_frames, 1.0))
 
                 progress_bar.progress(1.0)
                 st.success(f"✅ Processing complete! Analyzed {processed_frames} frames")
-
-                # Display metrics
-                st.markdown("---")
-                st.markdown("### 📊 Analysis Results")
-                
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("Total Frames", processed_frames)
-                with col2:
-                    st.metric("Avg Persons/Frame", f"{np.mean(total_detections):.1f}")
-                with col3:
-                    st.metric("Max Persons", int(np.max(total_detections)))
-                with col4:
-                    st.metric("Min Persons", int(np.min(total_detections)))
-
-                # Create graphs
-                st.markdown("### 📈 Detection Count Over Time")
-                
-                df_detections = pd.DataFrame({
-                    'Frame': frame_numbers,
-                    'Person Count': total_detections
-                })
-                
-                fig_detections = go.Figure()
-                fig_detections.add_trace(go.Scatter(
-                    x=df_detections['Frame'],
-                    y=df_detections['Person Count'],
-                    mode='lines+markers',
-                    name='Person Count',
-                    line=dict(color='#667eea', width=2),
-                    marker=dict(size=5)
-                ))
-                fig_detections.update_layout(
-                    title='Person Detection Count Over Time',
-                    xaxis_title='Frame Number',
-                    yaxis_title='Number of Persons Detected',
-                    hovermode='x unified',
-                    template='plotly_dark'
-                )
-                st.plotly_chart(fig_detections, use_container_width=True)
-
-                # Density graph
-                if show_density and len(density_over_time) > 0:
-                    st.markdown("### 📊 Crowd Density Over Time")
-                    
-                    df_density = pd.DataFrame({
-                        'Frame': frame_numbers[:len(density_over_time)],
-                        'Density Count': density_over_time
-                    })
-                    
-                    fig_density = go.Figure()
-                    fig_density.add_trace(go.Scatter(
-                        x=df_density['Frame'],
-                        y=df_density['Density Count'],
-                        mode='lines+markers',
-                        name='Density',
-                        line=dict(color='#FF6B6B', width=2),
-                        marker=dict(size=5),
-                        fill='tozeroy'
-                    ))
-                    
-                    # Add threshold lines
-                    thresholds = config['density']['thresholds']
-                    fig_density.add_hline(y=thresholds['critical'], line_dash="dash", line_color="red", 
-                                        annotation_text="Critical", annotation_position="right")
-                    fig_density.add_hline(y=thresholds['high'], line_dash="dash", line_color="orange", 
-                                        annotation_text="High", annotation_position="right")
-                    fig_density.add_hline(y=thresholds['medium'], line_dash="dash", line_color="yellow", 
-                                        annotation_text="Medium", annotation_position="right")
-                    
-                    fig_density.update_layout(
-                        title='Crowd Density Over Time',
-                        xaxis_title='Frame Number',
-                        yaxis_title='Density Count',
-                        hovermode='x unified',
-                        template='plotly_dark'
-                    )
-                    st.plotly_chart(fig_density, use_container_width=True)
-
-                # Download processed video
-                if output_video_path and os.path.exists(output_video_path):
-                    with open(output_video_path, 'rb') as f:
-                        video_bytes = f.read()
-                    st.download_button(
-                        label="📥 Download Processed Video",
-                        data=video_bytes,
-                        file_name="video_analysis.mp4",
-                        mime="video/mp4"
-                    )
 
             except Exception as e:
                 st.error(f"❌ Error processing video: {str(e)}")
@@ -314,19 +543,9 @@ def main():
                         cap.release()
                     except:
                         pass
-                if out is not None:
-                    try:
-                        out.release()
-                    except:
-                        pass
                 if os.path.exists(tmp_video_path):
                     try:
                         os.unlink(tmp_video_path)
-                    except:
-                        pass
-                if output_video_path and os.path.exists(output_video_path):
-                    try:
-                        os.unlink(output_video_path)
                     except:
                         pass
     else:
