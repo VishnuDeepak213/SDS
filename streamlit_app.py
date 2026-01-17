@@ -294,9 +294,9 @@ def show_image_analysis():
                     col1, col2 = st.columns(2)
                     
                     with col1:
-                        st.image(results['original'], caption="Original Image", use_column_width=True)
+                        st.image(results['original'], caption="Original Image", width=None)
                     with col2:
-                        st.image(results['visualized'], caption="Detection Result", use_column_width=True)
+                        st.image(results['visualized'], caption="Detection Result", width=None)
                     
                     # Statistics
                     st.markdown("---")
@@ -342,6 +342,10 @@ def show_video_analysis():
         with col3:
             show_flow = st.checkbox("🔄 Flow", value=False, key="v_flow")
         
+        # NEW: Person selection feature
+        track_specific_person = st.checkbox("🎯 Track Specific Person", value=False, key="v_track_person")
+        selected_person_id = None
+        
         max_frames = st.slider("Max Frames to Process", 50, 500, 200, step=50)
         
         if st.button("▶️ Analyze Video", use_container_width=True):
@@ -382,13 +386,82 @@ def show_video_analysis():
                 # Initialize modules
                 detector, tracker, threat_detector = initialize_modules(config)
                 density_estimator = DensityEstimator(config['density'], (vid_width, vid_height))
+                
+                # NEW: Handle person selection from first frame
+                selected_person_id = None
+                if track_specific_person:
+                    st.markdown("### 🎯 Select Person to Track")
+                    st.info("Detected persons in the first frame:")
+                    
+                    # Detect persons in first frame using detector.detect() method
+                    first_frame_detections = detector.detect(first_frame)
+                    st.info(f"✅ Detected {len(first_frame_detections)} persons in first frame")
+                    
+                    if len(first_frame_detections) > 0:
+                        # Display first frame with detection boxes and IDs
+                        first_frame_display = first_frame.copy()
+                        person_boxes = []
+                        
+                        # Get tracks from first frame - run tracker multiple times to initialize
+                        tracker_temp = PersonTracker(config['tracking'])
+                        for _ in range(3):  # Run 3 times to confirm tracks
+                            tracks = tracker_temp.update(first_frame, first_frame_detections)
+                        
+                        # Show detections even if tracking not confirmed yet
+                        if len(tracks) == 0 or not any(t.is_confirmed() for t in tracks):
+                            # Fallback: show raw detections with numbered boxes
+                            for idx, det in enumerate(first_frame_detections):
+                                x1, y1, x2, y2 = map(int, det[:4])
+                                person_id = idx + 1
+                                person_boxes.append((person_id, (x1, y1, x2, y2)))
+                                cv2.rectangle(first_frame_display, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(first_frame_display, f'Person {person_id}', (x1, y1-10), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        else:
+                            # Use confirmed tracks
+                            for track in tracks:
+                                if track.is_confirmed():
+                                    x1, y1, x2, y2 = map(int, track.to_tlbr())
+                                    person_boxes.append((track.track_id, (x1, y1, x2, y2)))
+                                    cv2.rectangle(first_frame_display, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                    cv2.putText(first_frame_display, f'ID:{track.track_id}', (x1, y1-10), 
+                                              cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        
+                        # Display frame with boxes
+                        col_frame, col_select = st.columns([2, 1])
+                        with col_frame:
+                            st.image(cv2.cvtColor(first_frame_display, cv2.COLOR_BGR2RGB), 
+                                    caption="First Frame with Detected Persons", width=None)
+                        
+                        # Selection interface
+                        with col_select:
+                            if person_boxes:
+                                person_ids = [str(box[0]) for box in person_boxes]
+                                selected_id_str = st.selectbox("Select Person ID:", person_ids, key="person_select")
+                                selected_person_id = int(selected_id_str)
+                                st.success(f"✅ Person ID {selected_person_id} selected for tracking")
+                            else:
+                                st.warning("⚠️ No persons confirmed for tracking")
+                    else:
+                        st.warning("⚠️ No persons detected in first frame")
+                        st.info("💡 Tip: Make sure the first frame contains visible people")
+                    
+                    # Reset tracker for actual processing
+                    tracker = PersonTracker(config['tracking'])
+                    
+                    # Reset video to beginning after reading first frame
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-                # Prepare writer
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                # Prepare writer with H264 codec for better compatibility
+                fourcc = cv2.VideoWriter_fourcc(*'avc1')  # H264 codec for VLC compatibility
                 output_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='_processed.mp4').name
                 out = cv2.VideoWriter(output_video_path, fourcc, fps, (vid_width, vid_height))
                 if not out.isOpened():
-                    raise RuntimeError("Failed to initialize video writer.")
+                    # Fallback to mp4v if h264 not available
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                    out = cv2.VideoWriter(output_video_path, fourcc, fps, (vid_width, vid_height))
+                    if not out.isOpened():
+                        raise RuntimeError("Failed to initialize video writer.")
 
                 # Progress tracking
                 progress_bar = st.progress(0)
@@ -404,7 +477,7 @@ def show_video_analysis():
 
                         output_frame = frame.copy()
 
-                        detections = detector(frame)
+                        detections = detector.detect(frame)
                         total_detections.append(len(detections))
 
                         if show_detection and len(detections) > 0:
@@ -418,8 +491,24 @@ def show_video_analysis():
                                 for track in tracks:
                                     if track.is_confirmed():
                                         x1, y1, x2, y2 = map(int, track.to_tlbr())
-                                        cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
-                                        cv2.putText(output_frame, f'ID:{track.track_id}', (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                                        
+                                        # NEW: Highlight selected person with different color
+                                        if selected_person_id is not None and track.track_id == selected_person_id:
+                                            # Bright red (0, 0, 255) for selected person
+                                            color = (0, 0, 255)
+                                            thickness = 3  # Thicker box for selected person
+                                            cv2.rectangle(output_frame, (x1, y1), (x2, y2), color, thickness)
+                                            cv2.putText(output_frame, f'TRACKED ID:{track.track_id}', (x1, y1-15), 
+                                                      cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                                            # Draw a filled circle at the center to highlight
+                                            cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                                            cv2.circle(output_frame, (cx, cy), 5, color, -1)
+                                        else:
+                                            # Blue (255, 0, 0) for other persons
+                                            color = (255, 0, 0)
+                                            cv2.rectangle(output_frame, (x1, y1), (x2, y2), color, 2)
+                                            cv2.putText(output_frame, f'ID:{track.track_id}', (x1, y1-10), 
+                                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                             except Exception:
                                 pass
 
