@@ -330,7 +330,60 @@ def show_video_analysis():
         max_frames = st.slider("Max Frames to Process", 50, 500, 200, step=50)
         
         if st.button("▶️ Analyze Video", use_container_width=True):
-            st.info("📹 Video analysis coming soon! This feature will process and display results frame-by-frame.")
+            # Save uploaded file temporarily
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp_file:
+                tmp_file.write(uploaded_file.getbuffer())
+                tmp_video_path = tmp_file.name
+            
+            cap = None
+            
+            try:
+                # STEP 1: Load video with FPS/size fallbacks
+                cap = cv2.VideoCapture(tmp_video_path)
+                if not cap.isOpened():
+                    raise RuntimeError("Failed to open video file.")
+
+                # Read first frame to establish size if metadata is missing
+                ret_first, first_frame = cap.read()
+                if not ret_first:
+                    raise RuntimeError("Could not read frames from video.")
+
+                # Reset position to start
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+                # Get FPS with fallback
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                if fps is None or fps <= 0:
+                    fps = 25.0
+
+                # Get frame dimensions with fallback
+                vid_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                vid_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                if vid_width <= 0 or vid_height <= 0:
+                    vid_height, vid_width = first_frame.shape[:2]
+
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                
+                # Display video metadata
+                st.success(f"✅ Video loaded successfully!")
+                st.info(f"📹 Resolution: {vid_width}x{vid_height} | FPS: {fps} | Total Frames: {total_frames}")
+                
+            except Exception as e:
+                st.error(f"❌ Error loading video: {str(e)}")
+            finally:
+                # Clean up
+                if cap is not None:
+                    try:
+                        cap.release()
+                    except:
+                        pass
+                
+                # Clean up temp input file
+                if os.path.exists(tmp_video_path):
+                    try:
+                        os.unlink(tmp_video_path)
+                    except:
+                        pass
     else:
         st.info("📤 Upload a video to begin analysis")
 
