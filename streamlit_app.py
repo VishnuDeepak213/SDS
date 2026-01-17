@@ -164,12 +164,16 @@ def process_image(uploaded_file, features, config):
 def main():
     """Main dashboard application"""
     
-    # Sidebar navigation
+    # Sidebar navigation (vertical rectangular buttons)
     st.sidebar.markdown("# 🎬 SDS Dashboard")
-    page = st.sidebar.radio(
-        "Select Analysis Type",
-        ["🏠 Home", "🖼️ Image Analysis", "🎥 Video Analysis"]
-    )
+    if st.sidebar.button("🏠 Home", use_container_width=True, key="nav_home"):
+        st.session_state.page = "🏠 Home"
+    if st.sidebar.button("🖼️ Image Analysis", use_container_width=True, key="nav_image"):
+        st.session_state.page = "🖼️ Image Analysis"
+    if st.sidebar.button("🎥 Video Analysis", use_container_width=True, key="nav_video"):
+        st.session_state.page = "🎥 Video Analysis"
+
+    page = st.session_state.get("page", "🏠 Home")
     
     if page == "🏠 Home":
         show_home_page()
@@ -341,59 +345,130 @@ def show_video_analysis():
                 tmp_video_path = tmp_file.name
             
             cap = None
+            out = None
+            output_video_path = None
             
             try:
-                # STEP 1: Load video with FPS/size fallbacks
+                # Load video with FPS/size fallbacks
                 cap = cv2.VideoCapture(tmp_video_path)
                 if not cap.isOpened():
                     raise RuntimeError("Failed to open video file.")
 
-                # Read first frame to establish size if metadata is missing
                 ret_first, first_frame = cap.read()
                 if not ret_first:
                     raise RuntimeError("Could not read frames from video.")
 
-                # Reset position to start
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-                # Get FPS with fallback
                 fps = cap.get(cv2.CAP_PROP_FPS)
                 if fps is None or fps <= 0:
                     fps = 25.0
 
-                # Get frame dimensions with fallback
                 vid_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                 vid_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 if vid_width <= 0 or vid_height <= 0:
                     vid_height, vid_width = first_frame.shape[:2]
 
                 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                
-                # Display video metadata
-                st.success(f"✅ Video loaded successfully!")
+                st.success("✅ Video loaded successfully!")
                 st.info(f"📹 Resolution: {vid_width}x{vid_height} | FPS: {fps} | Total Frames: {total_frames}")
-                
-                # Skip heavy processing and download; show placeholders for charts/metrics
-                st.warning("⚠️ Frame processing and video download are disabled in this build.")
 
-                # Minimal placeholders for charts/metrics
+                # Initialize modules
+                detector, tracker, threat_detector = initialize_modules(config)
+                density_estimator = DensityEstimator(config['density'], (vid_width, vid_height))
+
+                # Prepare writer
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                output_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='_processed.mp4').name
+                out = cv2.VideoWriter(output_video_path, fourcc, fps, (vid_width, vid_height))
+                if not out.isOpened():
+                    raise RuntimeError("Failed to initialize video writer.")
+
+                # Progress tracking
+                progress_bar = st.progress(0)
+                processed_frames = 0
                 total_detections = []
                 density_over_time = []
 
-                st.markdown("### 📊 Detection Over Time")
-                st.info("No data: processing disabled.")
+                with st.spinner("🔄 Processing frames..."):
+                    while cap.isOpened() and processed_frames < max_frames:
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
 
-                st.markdown("### 📊 Crowd Density Over Time")
-                st.info("No data: processing disabled.")
+                        output_frame = frame.copy()
 
-                st.markdown("### 📋 Summary")
-                summary_col1, summary_col2, summary_col3 = st.columns(3)
-                with summary_col1:
-                    st.metric("📊 Average Density", "N/A")
-                with summary_col2:
-                    st.metric("Peak Density Level", "N/A")
-                with summary_col3:
-                    st.metric("Processing Status", "⚠️ Disabled")
+                        detections = detector(frame)
+                        total_detections.append(len(detections))
+
+                        if show_detection and len(detections) > 0:
+                            for det in detections:
+                                x1, y1, x2, y2 = map(int, det[:4])
+                                conf = det[4]
+                                cv2.rectangle(output_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(output_frame, f'{conf:.2f}', (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                            try:
+                                tracks = tracker.update(frame, detections)
+                                for track in tracks:
+                                    if track.is_confirmed():
+                                        x1, y1, x2, y2 = map(int, track.to_tlbr())
+                                        cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                                        cv2.putText(output_frame, f'ID:{track.track_id}', (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                            except Exception:
+                                pass
+
+                        if show_density and len(detections) > 0:
+                            try:
+                                density_grid, _, _ = density_estimator.estimate(detections)
+                                density_count = density_grid.sum()
+                                density_over_time.append(density_count)
+                                thresholds = config['density']['thresholds']
+                                if density_count >= thresholds['critical']:
+                                    level = "CRITICAL"; color = (0, 0, 255)
+                                elif density_count >= thresholds['high']:
+                                    level = "HIGH"; color = (0, 165, 255)
+                                elif density_count >= thresholds['medium']:
+                                    level = "MEDIUM"; color = (0, 255, 255)
+                                else:
+                                    level = "LOW"; color = (0, 255, 0)
+                                cv2.putText(output_frame, f'Density: {level} ({density_count:.0f})', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                            except Exception:
+                                density_over_time.append(len(detections))
+
+                        out.write(output_frame)
+                        processed_frames += 1
+                        if processed_frames % 10 == 0 or processed_frames >= max_frames:
+                            progress_bar.progress(min(processed_frames / max_frames, 1.0))
+
+                progress_bar.progress(1.0)
+                st.success(f"✅ Processing complete! Analyzed {processed_frames} frames")
+
+                # Download processed video
+                if output_video_path and os.path.exists(output_video_path):
+                    with open(output_video_path, 'rb') as f:
+                        video_bytes = f.read()
+                    st.download_button(
+                        label="📥 Download Processed Video",
+                        data=video_bytes,
+                        file_name="video_analysis.mp4",
+                        mime="video/mp4"
+                    )
+
+            except Exception as e:
+                st.error(f"❌ Error processing video: {str(e)}")
+            finally:
+                if cap is not None:
+                    try: cap.release()
+                    except: pass
+                if out is not None:
+                    try: out.release()
+                    except: pass
+                if os.path.exists(tmp_video_path):
+                    try: os.unlink(tmp_video_path)
+                    except: pass
+                if output_video_path and os.path.exists(output_video_path):
+                    try: os.unlink(output_video_path)
+                    except: pass
                 
             except Exception as e:
                 st.error(f"❌ Error processing video: {str(e)}")
