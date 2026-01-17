@@ -1,0 +1,1 @@
+"""Detection module using YOLOv8."""
