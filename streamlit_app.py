@@ -384,59 +384,74 @@ def show_video_analysis():
                 # Process video frames
                 with st.spinner("🔄 Processing frames..."):
                     while cap.isOpened() and processed_frames < max_frames:
-                        ret, frame = cap.read()
-                        if not ret:
-                            break
-                        
-                        output_frame = frame.copy()
-                        
-                        # Detection
-                        detections = detector(frame)
-                        total_detections.append(len(detections))
-                        
-                        # Draw detections
-                        if show_detection:
-                            for det in detections:
-                                x1, y1, x2, y2 = map(int, det[:4])
-                                conf = det[4]
-                                cv2.rectangle(output_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                cv2.putText(output_frame, f'{conf:.2f}', (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        try:
+                            ret, frame = cap.read()
+                            if not ret:
+                                break
                             
-                            # Tracking
-                            tracks = tracker.update(frame, detections)
-                            for track in tracks:
-                                if track.is_confirmed():
-                                    x1, y1, x2, y2 = map(int, track.to_tlbr())
-                                    cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
-                                    cv2.putText(output_frame, f'ID:{track.track_id}', (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-                        
-                        # Density estimation
-                        if show_density:
-                            density_grid, density_heatmap, _ = density_estimator.estimate(detections)
-                            density_count = density_grid.sum()
-                            density_over_time.append(density_count)
+                            output_frame = frame.copy()
                             
-                            # Add density text
-                            thresholds = config['density']['thresholds']
-                            if density_count >= thresholds['critical']:
-                                level = "CRITICAL"
-                                color = (0, 0, 255)
-                            elif density_count >= thresholds['high']:
-                                level = "HIGH"
-                                color = (0, 165, 255)
-                            elif density_count >= thresholds['medium']:
-                                level = "MEDIUM"
-                                color = (0, 255, 255)
-                            else:
-                                level = "LOW"
-                                color = (0, 255, 0)
+                            # Detection
+                            detections = detector(frame)
+                            total_detections.append(len(detections))
                             
-                            cv2.putText(output_frame, f'Density: {level} ({density_count:.0f})', 
-                                      (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                            # Draw detections
+                            if show_detection and len(detections) > 0:
+                                for det in detections:
+                                    x1, y1, x2, y2 = map(int, det[:4])
+                                    conf = det[4]
+                                    cv2.rectangle(output_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                    cv2.putText(output_frame, f'{conf:.2f}', (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                                
+                                # Tracking
+                                try:
+                                    tracks = tracker.update(frame, detections)
+                                    for track in tracks:
+                                        if track.is_confirmed():
+                                            x1, y1, x2, y2 = map(int, track.to_tlbr())
+                                            cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                                            cv2.putText(output_frame, f'ID:{track.track_id}', (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                                except Exception as track_err:
+                                    pass  # Skip tracking if it fails
+                            
+                            # Density estimation
+                            if show_density and len(detections) > 0:
+                                try:
+                                    density_grid, density_heatmap, _ = density_estimator.estimate(detections)
+                                    density_count = density_grid.sum()
+                                    density_over_time.append(density_count)
+                                    
+                                    # Add density text
+                                    thresholds = config['density']['thresholds']
+                                    if density_count >= thresholds['critical']:
+                                        level = "CRITICAL"
+                                        color = (0, 0, 255)
+                                    elif density_count >= thresholds['high']:
+                                        level = "HIGH"
+                                        color = (0, 165, 255)
+                                    elif density_count >= thresholds['medium']:
+                                        level = "MEDIUM"
+                                        color = (0, 255, 255)
+                                    else:
+                                        level = "LOW"
+                                        color = (0, 255, 0)
+                                    
+                                    cv2.putText(output_frame, f'Density: {level} ({density_count:.0f})', 
+                                              (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                                except Exception as dens_err:
+                                    density_over_time.append(len(detections))  # Fallback to detection count
+                            
+                            processed_frames += 1
+                            
+                            # Update progress every 10 frames to reduce UI overhead
+                            if processed_frames % 10 == 0 or processed_frames >= max_frames:
+                                progress = processed_frames / max_frames
+                                progress_bar.progress(min(progress, 1.0))
                         
-                        processed_frames += 1
-                        progress = processed_frames / max_frames
-                        progress_bar.progress(progress)
+                        except Exception as frame_err:
+                            st.warning(f"⚠️ Skipped frame {processed_frames}: {str(frame_err)}")
+                            processed_frames += 1
+                            continue
                 
                 # Ensure progress bar reaches 100%
                 progress_bar.progress(1.0)
