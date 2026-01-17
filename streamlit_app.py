@@ -17,7 +17,14 @@ import plotly.express as px
 from src.detection.detector import PersonDetector
 from src.tracking.tracker import PersonTracker
 from src.density.estimator import DensityEstimator
+import sys
 from src.flow.analyzer import FlowAnalyzer
+
+# Ensure src/ is on Python path for Streamlit Cloud
+ROOT_DIR = Path(__file__).resolve().parent
+SRC_DIR = ROOT_DIR / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
 from src.threats.detector import ThreatDetector
 from src.visualization.renderer import Visualizer
 
@@ -457,33 +464,25 @@ def show_video_analysis():
             except Exception as e:
                 st.error(f"❌ Error processing video: {str(e)}")
             finally:
-                if cap is not None:
-                    try: cap.release()
-                    except: pass
-                if out is not None:
-                    try: out.release()
-                    except: pass
-                if os.path.exists(tmp_video_path):
-                    try: os.unlink(tmp_video_path)
-                    except: pass
-                if output_video_path and os.path.exists(output_video_path):
-                    try: os.unlink(output_video_path)
-                    except: pass
-                
-            except Exception as e:
-                st.error(f"❌ Error processing video: {str(e)}")
-            finally:
                 # Clean up
                 if cap is not None:
                     try:
                         cap.release()
                     except:
                         pass
-                
-                # Clean up temp input file
+                if out is not None:
+                    try:
+                        out.release()
+                    except:
+                        pass
                 if os.path.exists(tmp_video_path):
                     try:
                         os.unlink(tmp_video_path)
+                    except:
+                        pass
+                if output_video_path and os.path.exists(output_video_path):
+                    try:
+                        os.unlink(output_video_path)
                     except:
                         pass
     else:
