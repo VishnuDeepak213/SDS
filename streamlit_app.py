@@ -373,96 +373,27 @@ def show_video_analysis():
                 st.success(f"✅ Video loaded successfully!")
                 st.info(f"📹 Resolution: {vid_width}x{vid_height} | FPS: {fps} | Total Frames: {total_frames}")
                 
-                # STEP 2: Initialize modules and process frames with detection/tracking/density
-                st.markdown("### 🔄 Processing Frames...")
-                
-                detector, tracker, threat_detector = initialize_modules(config)
-                density_estimator = DensityEstimator(config['density'], (vid_width, vid_height))
-                visualizer = Visualizer(config['visualization'])
-                
-                # Progress tracking
-                progress_bar = st.progress(0)
-                processed_frames = 0
+                # Skip heavy processing and download; show placeholders for charts/metrics
+                st.warning("⚠️ Frame processing and video download are disabled in this build.")
+
+                # Minimal placeholders for charts/metrics
                 total_detections = []
                 density_over_time = []
-                
-                # Process video frames
-                with st.spinner("🔄 Processing frames..."):
-                    while cap.isOpened() and processed_frames < max_frames:
-                        try:
-                            ret, frame = cap.read()
-                            if not ret:
-                                break
-                            
-                            output_frame = frame.copy()
-                            
-                            # Detection
-                            detections = detector(frame)
-                            total_detections.append(len(detections))
-                            
-                            # Draw detections
-                            if show_detection and len(detections) > 0:
-                                for det in detections:
-                                    x1, y1, x2, y2 = map(int, det[:4])
-                                    conf = det[4]
-                                    cv2.rectangle(output_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                    cv2.putText(output_frame, f'{conf:.2f}', (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                                
-                                # Tracking
-                                try:
-                                    tracks = tracker.update(frame, detections)
-                                    for track in tracks:
-                                        if track.is_confirmed():
-                                            x1, y1, x2, y2 = map(int, track.to_tlbr())
-                                            cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
-                                            cv2.putText(output_frame, f'ID:{track.track_id}', (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-                                except Exception as track_err:
-                                    pass  # Skip tracking if it fails
-                            
-                            # Density estimation
-                            if show_density and len(detections) > 0:
-                                try:
-                                    density_grid, density_heatmap, _ = density_estimator.estimate(detections)
-                                    density_count = density_grid.sum()
-                                    density_over_time.append(density_count)
-                                    
-                                    # Add density text
-                                    thresholds = config['density']['thresholds']
-                                    if density_count >= thresholds['critical']:
-                                        level = "CRITICAL"
-                                        color = (0, 0, 255)
-                                    elif density_count >= thresholds['high']:
-                                        level = "HIGH"
-                                        color = (0, 165, 255)
-                                    elif density_count >= thresholds['medium']:
-                                        level = "MEDIUM"
-                                        color = (0, 255, 255)
-                                    else:
-                                        level = "LOW"
-                                        color = (0, 255, 0)
-                                    
-                                    cv2.putText(output_frame, f'Density: {level} ({density_count:.0f})', 
-                                              (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-                                except Exception as dens_err:
-                                    density_over_time.append(len(detections))  # Fallback to detection count
-                            
-                            processed_frames += 1
-                            
-                            # Update progress every 10 frames to reduce UI overhead
-                            if processed_frames % 10 == 0 or processed_frames >= max_frames:
-                                progress = processed_frames / max_frames
-                                progress_bar.progress(min(progress, 1.0))
-                        
-                        except Exception as frame_err:
-                            st.warning(f"⚠️ Skipped frame {processed_frames}: {str(frame_err)}")
-                            processed_frames += 1
-                            continue
-                
-                # Ensure progress bar reaches 100%
-                progress_bar.progress(1.0)
-                
-                st.success(f"✅ Processing complete! Analyzed {processed_frames} frames")
-                st.info(f"👤 Total detections: {len(total_detections)} frames | Avg persons/frame: {np.mean(total_detections):.1f}")
+
+                st.markdown("### 📊 Detection Over Time")
+                st.info("No data: processing disabled.")
+
+                st.markdown("### 📊 Crowd Density Over Time")
+                st.info("No data: processing disabled.")
+
+                st.markdown("### 📋 Summary")
+                summary_col1, summary_col2, summary_col3 = st.columns(3)
+                with summary_col1:
+                    st.metric("📊 Average Density", "N/A")
+                with summary_col2:
+                    st.metric("Peak Density Level", "N/A")
+                with summary_col3:
+                    st.metric("Processing Status", "⚠️ Disabled")
                 
             except Exception as e:
                 st.error(f"❌ Error processing video: {str(e)}")
