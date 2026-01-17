@@ -368,8 +368,87 @@ def show_video_analysis():
                 st.success(f"✅ Video loaded successfully!")
                 st.info(f"📹 Resolution: {vid_width}x{vid_height} | FPS: {fps} | Total Frames: {total_frames}")
                 
+                # STEP 2: Initialize modules and process frames with detection/tracking/density
+                st.markdown("### 🔄 Processing Frames...")
+                
+                detector, tracker, threat_detector = initialize_modules(config)
+                density_estimator = DensityEstimator(config['density'], (vid_width, vid_height))
+                visualizer = Visualizer(config['visualization'])
+                
+                # Progress tracking
+                progress_bar = st.progress(0)
+                processed_frames = 0
+                total_detections = []
+                density_over_time = []
+                output_frames = []
+                
+                # Process video frames
+                with st.spinner("🔄 Processing frames..."):
+                    while cap.isOpened() and processed_frames < max_frames:
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                        
+                        output_frame = frame.copy()
+                        
+                        # Detection
+                        detections = detector(frame)
+                        total_detections.append(len(detections))
+                        
+                        # Draw detections
+                        if show_detection:
+                            for det in detections:
+                                x1, y1, x2, y2 = map(int, det[:4])
+                                conf = det[4]
+                                cv2.rectangle(output_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(output_frame, f'{conf:.2f}', (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                            
+                            # Tracking
+                            tracks = tracker.update(frame, detections)
+                            for track in tracks:
+                                if track.is_confirmed():
+                                    x1, y1, x2, y2 = map(int, track.to_tlbr())
+                                    cv2.rectangle(output_frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                                    cv2.putText(output_frame, f'ID:{track.track_id}', (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                        
+                        # Density estimation
+                        if show_density:
+                            density_grid, density_heatmap, _ = density_estimator.estimate(detections)
+                            density_count = density_grid.sum()
+                            density_over_time.append(density_count)
+                            
+                            # Add density text
+                            thresholds = config['density']['thresholds']
+                            if density_count >= thresholds['critical']:
+                                level = "CRITICAL"
+                                color = (0, 0, 255)
+                            elif density_count >= thresholds['high']:
+                                level = "HIGH"
+                                color = (0, 165, 255)
+                            elif density_count >= thresholds['medium']:
+                                level = "MEDIUM"
+                                color = (0, 255, 255)
+                            else:
+                                level = "LOW"
+                                color = (0, 255, 0)
+                            
+                            cv2.putText(output_frame, f'Density: {level} ({density_count:.0f})', 
+                                      (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                        
+                        output_frames.append(output_frame)
+                        
+                        processed_frames += 1
+                        progress = processed_frames / max_frames
+                        progress_bar.progress(progress)
+                
+                # Ensure progress bar reaches 100%
+                progress_bar.progress(1.0)
+                
+                st.success(f"✅ Processing complete! Analyzed {processed_frames} frames")
+                st.info(f"👤 Total detections: {len(total_detections)} frames | Avg persons/frame: {np.mean(total_detections):.1f}")
+                
             except Exception as e:
-                st.error(f"❌ Error loading video: {str(e)}")
+                st.error(f"❌ Error processing video: {str(e)}")
             finally:
                 # Clean up
                 if cap is not None:
