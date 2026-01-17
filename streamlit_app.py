@@ -17,9 +17,8 @@ import plotly.express as px
 
 # Ensure src/ is on Python path BEFORE importing from src
 ROOT_DIR = Path(__file__).resolve().parent
-SRC_DIR = ROOT_DIR / "src"
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 # Now import from src modules
 from src.detection.detector import PersonDetector
