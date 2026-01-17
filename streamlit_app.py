@@ -8,23 +8,23 @@ import yaml
 import numpy as np
 import tempfile
 import os
+import sys
 from pathlib import Path
 from PIL import Image
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 
-from src.detection.detector import PersonDetector
-from src.tracking.tracker import PersonTracker
-from src.density.estimator import DensityEstimator
-import sys
-from src.flow.analyzer import FlowAnalyzer
-
-# Ensure src/ is on Python path for Streamlit Cloud
+# Ensure src/ is on Python path BEFORE importing from src
 ROOT_DIR = Path(__file__).resolve().parent
 SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
+
+# Now import from src modules
+from src.detection.detector import PersonDetector
+from src.tracking.tracker import PersonTracker
+from src.density.estimator import DensityEstimator
 from src.threats.detector import ThreatDetector
 from src.visualization.renderer import Visualizer
 
