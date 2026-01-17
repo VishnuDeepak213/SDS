@@ -452,19 +452,9 @@ def show_video_analysis():
                     # Reset video to beginning after reading first frame
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-                # Prepare writer with H264 codec for better compatibility
-                fourcc = cv2.VideoWriter_fourcc(*'avc1')  # H264 codec for VLC compatibility
-                output_video_path = tempfile.NamedTemporaryFile(delete=False, suffix='_processed.mp4').name
-                out = cv2.VideoWriter(output_video_path, fourcc, fps, (vid_width, vid_height))
-                if not out.isOpened():
-                    # Fallback to mp4v if h264 not available
-                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                    out = cv2.VideoWriter(output_video_path, fourcc, fps, (vid_width, vid_height))
-                    if not out.isOpened():
-                        raise RuntimeError("Failed to initialize video writer.")
-
-                # Progress tracking
+                # Progress tracking and frame display
                 progress_bar = st.progress(0)
+                frame_placeholder = st.empty()
                 processed_frames = 0
                 total_detections = []
                 density_over_time = []
@@ -530,24 +520,14 @@ def show_video_analysis():
                             except Exception:
                                 density_over_time.append(len(detections))
 
-                        out.write(output_frame)
+                        # Display frame in real-time
+                        frame_placeholder.image(output_frame, channels="BGR", use_column_width=True)
                         processed_frames += 1
                         if processed_frames % 10 == 0 or processed_frames >= max_frames:
                             progress_bar.progress(min(processed_frames / max_frames, 1.0))
 
                 progress_bar.progress(1.0)
                 st.success(f"✅ Processing complete! Analyzed {processed_frames} frames")
-
-                # Download processed video
-                if output_video_path and os.path.exists(output_video_path):
-                    with open(output_video_path, 'rb') as f:
-                        video_bytes = f.read()
-                    st.download_button(
-                        label="📥 Download Processed Video",
-                        data=video_bytes,
-                        file_name="video_analysis.mp4",
-                        mime="video/mp4"
-                    )
 
             except Exception as e:
                 st.error(f"❌ Error processing video: {str(e)}")
@@ -558,19 +538,9 @@ def show_video_analysis():
                         cap.release()
                     except:
                         pass
-                if out is not None:
-                    try:
-                        out.release()
-                    except:
-                        pass
                 if os.path.exists(tmp_video_path):
                     try:
                         os.unlink(tmp_video_path)
-                    except:
-                        pass
-                if output_video_path and os.path.exists(output_video_path):
-                    try:
-                        os.unlink(output_video_path)
                     except:
                         pass
     else:
