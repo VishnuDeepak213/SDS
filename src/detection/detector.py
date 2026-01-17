@@ -1,12 +1,19 @@
 """YOLOv8 person detector."""
+import streamlit as st
 import cv2
 import numpy as np
 from ultralytics import YOLO
 
+
+@st.cache_resource
+def load_yolo(weights: str):
+    """Cache the YOLO model so Streamlit Cloud doesn't reload on each run."""
+    return YOLO(weights)
+
 class PersonDetector:
     def __init__(self, config):
         self.config = config
-        self.model = YOLO(config['model'])
+        self.model = load_yolo(config.get('model', 'yolov8n.pt'))
         self.confidence = config['confidence']
         self.iou_threshold = config['iou_threshold']
         self.classes = config['classes']
