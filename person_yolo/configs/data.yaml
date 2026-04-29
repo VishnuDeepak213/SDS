@@ -1,0 +1,9 @@
+# Ultralytics YOLOv8 dataset config
+path: v:/SSD/person_yolo/datasets/person_wider_mot
+train: train/images
+val: val/images
+# optional test set if you add it later
+# test: test/images
+names:
+  - person
+nc: 1

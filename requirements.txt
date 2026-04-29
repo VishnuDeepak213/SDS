@@ -1,0 +1,23 @@
+# SDS full project runtime dependencies
+# Keep this focused on the deployable Streamlit app, not local training tooling.
+streamlit>=1.53.0
+ultralytics>=8.4.0
+opencv-python-headless==4.9.0.80
+numpy>=1.24.0
+scipy>=1.10.0
+PyYAML>=6.0.1
+torch>=2.5.0
+torchvision>=0.20.0
+Pillow>=12.0.0
+pandas>=2.1.0
+matplotlib>=3.8.0
+plotly>=5.18.0
+filterpy>=1.4.5
+deep-sort-realtime>=1.3.0
+scikit-learn>=1.3.0
+scikit-image>=0.22.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+imageio-ffmpeg==0.4.9
+tqdm>=4.66.0
+protobuf>=4.23.0,<6.0.0

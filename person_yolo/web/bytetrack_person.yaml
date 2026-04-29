@@ -1,0 +1,20 @@
+## ByteTrack tuned for higher recall in crowded scenes
+# Required by Ultralytics trackers
+tracker_type: bytetrack
+
+# Thresholds
+track_thresh: 0.30
+track_high_thresh: 0.35
+track_low_thresh: 0.05
+new_track_thresh: 0.35
+match_thresh: 0.80
+
+# Behavior
+fuse_score: true
+use_kalman_filter: true
+max_time_lost: 30
+track_buffer: 30
+min_box_area: 10
+frame_rate: -1
+
+# Appearance features disabled for speed (default for ByteTrack)
